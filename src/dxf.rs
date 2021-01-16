@@ -21,7 +21,8 @@ impl std::hash::Hash for Point {
 
 impl PartialEq for Point {
     fn eq(&self, other: &Point) -> bool {
-        (self.x - other.x).abs() < POINT_PRECISION
+        (self.x - other.x).abs() < POINT_PRECISION &&
+        (self.y - other.y).abs() < POINT_PRECISION
     }
 }
 

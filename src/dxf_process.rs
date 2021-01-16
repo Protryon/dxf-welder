@@ -18,9 +18,20 @@ impl Circle {
     fn get_polar_radians(&self, point: &Point) -> f64 {
         let radians = (point.y - self.center.y).atan2(point.x - self.center.x);
         if radians < 0.0 {
-            return 2.0 * std::f64::consts::PI + radians;
+            return 2.0 * PI + radians;
         }
         radians
+    }
+
+    fn get_radial_dist(&self, start: &Point, end: &Point) -> f64 {
+        let start_theta = self.get_polar_radians(start);
+        let end_theta = self.get_polar_radians(end);
+        let raw = (start_theta - end_theta).abs();
+        if raw > PI {
+            2.0 * PI - raw
+        } else {
+            raw
+        }
     }
 }
 
@@ -91,7 +102,7 @@ impl DxfConfig {
     }
 
     // https://github.com/FormerLurker/ArcWelderPlugin/blob/master/octoprint_arc_welder/data/lib/c/arc_welder/segmented_arc.cpp#L212
-    fn check_chain_circle(&self, chain: &[Point], circle: &Circle/*, expected_length: f64*/) -> Option<Arc> {
+    fn check_chain_circle(&self, chain: &[Point], circle: &Circle, expected_length: f64) -> Option<Arc> {
         for point in chain[1..].iter() {
             let distance = circle.center.dist(point);
             let diff = (circle.radius - distance).abs();
@@ -110,33 +121,43 @@ impl DxfConfig {
             }
         }
 
-        self.make_arc(circle, &chain[0], &chain[(chain.len() - 2) / 2 + 1], &chain[chain.len() - 1]/*, expected_length*/)
+        self.make_arc(circle, &chain[0], &chain[(chain.len() - 2) / 2 + 1], &chain[chain.len() - 1], expected_length)
     }
 
     // https://github.com/FormerLurker/ArcWelderPlugin/blob/master/octoprint_arc_welder/data/lib/c/arc_welder/segmented_shape.cpp#L228
-    fn make_arc(&self, circle: &Circle, start: &Point, mid: &Point, end: &Point/*, length: f64*/) -> Option<Arc> {
+    fn make_arc(&self, circle: &Circle, start: &Point, mid: &Point, end: &Point, length: f64) -> Option<Arc> {
         let mut start_theta = circle.get_polar_radians(start);
         let mid_theta = circle.get_polar_radians(mid);
         let mut end_theta = circle.get_polar_radians(end);
         let mut direction = Direction::Unknown;
+        let mut angle_radians = 0f64;
+
         if end_theta > start_theta {
             if start_theta < mid_theta && mid_theta < end_theta {
                 direction = Direction::CounterClockwise;
+                angle_radians = end_theta - start_theta;
             } else if (0.0 <= mid_theta && mid_theta < start_theta) || (end_theta < mid_theta && mid_theta < PI * 2.0) {
                 direction = Direction::Clockwise;
+                angle_radians = start_theta + (2f64 * PI - end_theta);
             }
         } else if start_theta > end_theta {
             if (start_theta < mid_theta && mid_theta < 2.0 * PI) || (0.0 < mid_theta && mid_theta < end_theta) {
                 direction = Direction::CounterClockwise;
+                angle_radians = end_theta + (2f64 * PI - start_theta);
             } else if end_theta < mid_theta && mid_theta < start_theta {
                 direction = Direction::Clockwise;
+                angle_radians = start_theta - end_theta;
             }
         }
         if direction == Direction::Unknown {
             return None;
         }
+
+        if direction == Direction::Clockwise {
+            angle_radians *= -1.0;
+        }
+
         // let calc_length = circle.radius * angle_radians;
-        // id rather have full circles than check length properly for long runs
         // if (calc_length - length).abs() > self.resolution {
         //     return None;
         // }
@@ -166,20 +187,21 @@ impl DxfConfig {
         let mut entities: Vec<Entity> = vec![];
 
         let mut current_arc_start = 0;
-        // let mut current_arc_length: f64 = chain[0..self.min_segments - 1].windows(2).map(|p| p[0].dist(&p[1])).sum();
+        let mut current_arc_length: f64 = chain[0..self.min_segments].windows(2).map(|p| p[0].dist(&p[1])).sum();
         let mut current_arc: Option<Arc> = None;
         let mut i = self.min_segments - 1;
         while i < chain.len() {
-            // if current_arc_length < 0.0 {
-            //     panic!("current_arc_start is < 0.0 {} {} {}", i, current_arc_start, current_arc_length);
-            // }
+            if current_arc_length < 0.0 {
+                panic!("current_arc_length is < 0.0 {} {} {}", i, current_arc_start, current_arc_length);
+            }
             let last = &chain[i - 1];
             let point = &chain[i];
+            // println!("i = {}, cas = {}, len = {}, last: {}, {}, point: {}, {}, in_arc = {}", i, current_arc_start, current_arc_length, last.x, last.y, point.x, point.y, current_arc.is_some());
             if last == point {
                 i += 1;
                 continue;
             }
-            // let dist = last.dist(point);
+            let dist = last.dist(point);
             //circlefy
             if &chain[current_arc_start] == point {
                 if let Some(arc) = current_arc.take() {
@@ -188,17 +210,20 @@ impl DxfConfig {
                         radius: arc.radius,
                     });
                     current_arc_start = i + 1;
-                    // current_arc_length = chain[current_arc_start..(current_arc_start + self.min_segments - 1).min(chain.len())].windows(2).map(|p| p[0].dist(&p[1])).sum();
+                    current_arc_length = chain[current_arc_start..(current_arc_start + self.min_segments - 1).min(chain.len())].windows(2).map(|p| p[0].dist(&p[1])).sum();
                     i = current_arc_start + self.min_segments - 1;
                     continue;
                 }
             }
             if let Some(circle) = self.make_circle(&chain[current_arc_start], &chain[current_arc_start + (i - current_arc_start - 2) / 2 + 1], point) {
-                if let Some(arc) = self.check_chain_circle(&chain[current_arc_start..i + 1], &circle/*, current_arc_length + dist*/) {
-                    // current_arc_length += dist;
-                    current_arc = Some(arc);
-                    i += 1;
-                    continue;
+                if let Some(arc) = self.check_chain_circle(&chain[current_arc_start..i + 1], &circle, current_arc_length + dist) {
+                    let cdist = circle.get_radial_dist(last, point) * circle.radius;
+                    if (cdist - dist).abs() < self.resolution {
+                        current_arc_length += dist;
+                        current_arc = Some(arc);
+                        i += 1;
+                        continue;
+                    }
                 }
             }
 
@@ -209,20 +234,34 @@ impl DxfConfig {
                     start_angle: arc.start_angle,
                     end_angle: arc.end_angle,
                 });
-                current_arc_start = i;
-                // current_arc_length = chain[current_arc_start..(current_arc_start + self.min_segments - 1).min(chain.len())].windows(2).map(|p| p[0].dist(&p[1])).sum();
+                current_arc_start = i - 2;
+                current_arc_length = chain[current_arc_start..(current_arc_start + self.min_segments - 1).min(chain.len())].windows(2).map(|p| p[0].dist(&p[1])).sum();
                 i = current_arc_start + self.min_segments - 1;
                 continue;
             } else {
+                let restart_pt = i - current_arc_start - 1 >= self.min_segments;
+                if !restart_pt {
+                    current_arc_length += dist;
+                }
                 entities.push(Entity::Line(chain[current_arc_start].clone(), chain[current_arc_start + 1].clone()));
-                // current_arc_length -= chain[current_arc_start].dist(&chain[current_arc_start + 1]);
+                let mut len = chain[current_arc_start].dist(&chain[current_arc_start + 1]);
+                // println!("sub = {} {} {}", current_arc_length, len, dist);
+                if len > current_arc_length {
+                    if len < current_arc_length + self.resolution {
+                        len = current_arc_length;
+                    } else {
+                        // println!("p1 {}, {}", chain[current_arc_start].x, chain[current_arc_start].y);
+                        // println!("p2 {}, {}", chain[current_arc_start + 1].x, chain[current_arc_start + 1].y);
+                        panic!("length of removed segment is longer than current arc length: {} {}", len, current_arc_length);
+                    }
+                }
+                current_arc_length -= len;
                 current_arc_start += 1;
-                if i - current_arc_start >= self.min_segments {
+                if restart_pt {
                     continue;
                 }
             }
 
-            // current_arc_length += dist;
             i += 1;
         }
         if let Some(arc) = current_arc.take() {
@@ -266,8 +305,13 @@ impl DxfConfig {
                 next = point;
             }
             chain.push(next);
+            // println!("chain len: {}", chain.len());
+            // for p in chain.iter() {
+            //     println!("p {}, {}", p.x, p.y);
+            // }
             chains.push(chain);
         }
+        
         for chain in chains.into_iter() {
             let output = self.process_chain(chain)?;
             new_entities.extend(output);
