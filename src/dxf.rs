@@ -3,6 +3,7 @@ use crate::result::*;
 use std::collections::VecDeque;
 use std::collections::BTreeMap;
 use std::cmp::Ordering;
+use std::fmt;
 
 const POINT_PRECISION: f64 = 0.00001;
 
@@ -64,6 +65,18 @@ pub enum Entity {
         center: Point,
         radius: f64,
     },
+    Polyline {
+        // curve_fit: bool,
+        // spline_fit: bool,
+        /*
+        0 = No smooth surface fitted
+        5 = Quadratic B-spline surface
+        6 = Cubic B-spline surface
+        8 = Bezier surface
+        */
+        curve_type: u32,
+        vertices: Vec<Point>,
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -83,57 +96,75 @@ fn missing_tag_for_entity(tag: i32) -> Error {
     weld_err!("missing tag for entity: {}", tag)
 }
 
-fn emit_str(out: &mut String, tag: i32, data: &str) {
-    out.push_str(&format!("  {}\n{}\n", tag, data));
-}
-
-
-fn emit_f64(out: &mut String, tag: i32, data: f64) {
+fn emit<T: fmt::Display>(out: &mut String, tag: i32, data: T) {
     out.push_str(&format!("  {}\n{}\n", tag, data));
 }
 
 impl ToString for Drawing {
     fn to_string(&self) -> String {
         let mut out = String::new();
-        emit_str(&mut out, 0, "SECTION");
-        emit_str(&mut out, 2, "BLOCKS");
-        emit_str(&mut out, 0, "ENDSEC");
-        emit_str(&mut out, 0, "SECTION");
-        emit_str(&mut out, 2, "ENTITIES");
+        // emit(&mut out, 0, "SECTION");
+        // emit(&mut out, 2, "HEADER");
+        // emit(&mut out, 9, "$ACADVER");
+        // emit(&mut out, 1, "AC1014");
+        // emit(&mut out, 9, "$MEASUREMENT");
+        // emit(&mut out, 70, 1);
+        // emit(&mut out, 0, "ENDSEC");
+
+        emit(&mut out, 0, "SECTION");
+        emit(&mut out, 2, "BLOCKS");
+        emit(&mut out, 0, "ENDSEC");
+
+        emit(&mut out, 0, "SECTION");
+        emit(&mut out, 2, "ENTITIES");
         for entity in self.entities.iter() {
             match entity {
                 Entity::Line(left, right) => {
-                    emit_str(&mut out, 0, "LINE");
-                    emit_f64(&mut out, 8, 0.0);
-                    emit_f64(&mut out, 10, left.x);
-                    emit_f64(&mut out, 20, left.y);
-                    emit_f64(&mut out, 11, right.x);
-                    emit_f64(&mut out, 21, right.y);
+                    emit(&mut out, 0, "LINE");
+                    emit(&mut out, 8, 0.0);
+                    emit(&mut out, 10, left.x);
+                    emit(&mut out, 20, left.y);
+                    emit(&mut out, 11, right.x);
+                    emit(&mut out, 21, right.y);
                 },
                 Entity::Arc { center, radius, start_angle, end_angle } => {
-                    emit_str(&mut out, 0, "ARC");
-                    emit_f64(&mut out, 8, 0.0);
-                    emit_f64(&mut out, 10, center.x);
-                    emit_f64(&mut out, 20, center.y);
-                    emit_f64(&mut out, 40, *radius);
-                    emit_f64(&mut out, 50, *start_angle);
-                    emit_f64(&mut out, 51, *end_angle);
+                    emit(&mut out, 0, "ARC");
+                    emit(&mut out, 8, 0.0);
+                    emit(&mut out, 10, center.x);
+                    emit(&mut out, 20, center.y);
+                    emit(&mut out, 40, *radius);
+                    emit(&mut out, 50, *start_angle);
+                    emit(&mut out, 51, *end_angle);
                 },
                 Entity::Circle { center, radius } => {
-                    emit_str(&mut out, 0, "CIRCLE");
-                    emit_f64(&mut out, 8, 0.0);
-                    emit_f64(&mut out, 10, center.x);
-                    emit_f64(&mut out, 20, center.y);
-                    emit_f64(&mut out, 40, *radius);
+                    emit(&mut out, 0, "CIRCLE");
+                    emit(&mut out, 8, 0.0);
+                    emit(&mut out, 10, center.x);
+                    emit(&mut out, 20, center.y);
+                    emit(&mut out, 40, *radius);
+                },
+                Entity::Polyline { curve_type, vertices } => {
+                    emit(&mut out, 0, "POLYLINE");
+                    emit(&mut out, 8, 0.0);
+                    emit(&mut out, 70, 8u32);
+                    emit(&mut out, 75, curve_type);
+                    for Point { x, y } in vertices.iter() {
+                        emit(&mut out, 0, "VERTEX");
+                        emit(&mut out, 8, 0.0);
+                        emit(&mut out, 70, 32u32);
+                        emit(&mut out, 10, x);
+                        emit(&mut out, 20, y);
+                    }
+                    emit(&mut out, 0, "SEQEND");
                 },
             }
         }
-        emit_str(&mut out, 0, "ENDSEC");
-        emit_str(&mut out, 0, "SECTION");
-        emit_str(&mut out, 2, "OBJECTS");
-        emit_str(&mut out, 0, "DICTIONARY");
-        emit_str(&mut out, 0, "ENDSEC");
-        emit_str(&mut out, 0, "EOF");
+        emit(&mut out, 0, "ENDSEC");
+        emit(&mut out, 0, "SECTION");
+        emit(&mut out, 2, "OBJECTS");
+        emit(&mut out, 0, "DICTIONARY");
+        emit(&mut out, 0, "ENDSEC");
+        emit(&mut out, 0, "EOF");
 
         out
     }

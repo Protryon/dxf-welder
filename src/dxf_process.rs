@@ -186,6 +186,29 @@ impl DxfConfig {
         }
         let mut entities: Vec<Entity> = vec![];
 
+        // let k = 4;
+        // let ncoeffs = chain.len() + 2 - k;
+        // let mut bw = rgsl::BSpLineWorkspace::new(k, chain.len()).unwrap();
+        // let knots = rgsl::VectorF64::from_slice(&chain.iter().map(|x| x.x).collect::<Vec<f64>>()[..]).unwrap();
+        // let ys = rgsl::VectorF64::from_slice(&chain.iter().map(|x| x.y).collect::<Vec<f64>>()[..]).unwrap();
+        // let ws = rgsl::VectorF64::from_slice(&chain.iter().map(|_| 1.0).collect::<Vec<f64>>()[..]).unwrap();
+        // bw.knots(&knots);
+        // let mut X = rgsl::MatrixF64::new(chain.len(), ncoeffs).unwrap();
+        // for (i, Point {x, .. }) in chain.iter().enumerate() {
+        //     let mut output = rgsl::VectorF64::new(ncoeffs).unwrap();
+        //     bw.eval(*x, &mut output);
+        //     X.set_col(i, &output);
+        // }
+        // let mut coeffs = rgsl::VectorF64::new(ncoeffs).unwrap();
+        // let mut cov = rgsl::MatrixF64::new(ncoeffs, ncoeffs).unwrap();
+        // let mut mw = rgsl::MultifitLinearWorkspace::new(chain.len(), ncoeffs).unwrap();
+        // mw.wlinear(&X, &ws, &ys, &mut coeffs, &mut cov);
+        
+        // entities.push(Entity::Polyline {
+        //     curve_type: 0,
+        //     vertices: chain,
+        // });
+        
         let mut current_arc_start = 0;
         let mut current_arc_length: f64 = chain[0..self.min_segments].windows(2).map(|p| p[0].dist(&p[1])).sum();
         let mut current_arc: Option<Arc> = None;
@@ -234,7 +257,7 @@ impl DxfConfig {
                     start_angle: arc.start_angle,
                     end_angle: arc.end_angle,
                 });
-                current_arc_start = i - 2;
+                current_arc_start = i - 1;
                 current_arc_length = chain[current_arc_start..(current_arc_start + self.min_segments - 1).min(chain.len())].windows(2).map(|p| p[0].dist(&p[1])).sum();
                 i = current_arc_start + self.min_segments - 1;
                 continue;
